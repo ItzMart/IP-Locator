@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>IP Locator</title>
+    <link rel="icon" href="favicon.ico" type="image/x-icon">
+    <!-- Incluindo o CSS do Leaflet.js para os mapas -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #121212;
+            color: white;
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        #app {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        h1 {
+            margin-bottom: 20px;
+            font-size: 2.5em;
+            color: #76ff03;
+            text-shadow: 0 0 10px rgba(0, 255, 0, 0.7);
+        }
+
+        #map {
+            width: 90%;
+            height: 500px; /* Altura fixa para o mapa */
+            border-radius: 10px;
+            box-shadow: 0px 0px 30px rgba(0, 255, 0, 0.5);
+        }
+
+        .input-container {
+            margin-bottom: 20px;
+            display: flex;
+            flex-direction: row;
+        }
+
+        .input-container input {
+            padding: 10px;
+            width: 300px;
+            font-size: 1em;
+            border: 2px solid #76ff03;
+            border-radius: 5px;
+            background-color: #1f1f1f;
+            color: white;
+            margin-right: 10px;
+        }
+
+        .input-container button {
+            padding: 10px 20px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            background-color: #76ff03;
+            color: #121212;
+            cursor: pointer;
+            transition: background-color 0.3s ease-in-out;
+        }
+
+        .input-container button:hover {
+            background-color: #64dd17;
+        }
+
+        #ip-info {
+            margin-top: 20px;
+            color: #76ff03;
+            background-color: #1f1f1f;
+            padding: 15px;
+            border-radius: 10px;
+            width: 80%;
+            text-align: center;
+            box-shadow: 0px 0px 20px rgba(0, 255, 0, 0.5);
+        }
+
+        #ip-info p {
+            margin: 5px 0;
+        }
+
+        #time {
+            font-size: 1.5em;
+            font-weight: bold;
+        }
+
+        /* Modal de erro */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            justify-content: center;
+            align-items: center;
+        }
+
+        .modal-content {
+            background-color: #1f1f1f;
+            color: #76ff03;
+            padding: 20px;
+            border-radius: 10px;
+            text-align: center;
+            width: 300px;
+            box-shadow: 0px 0px 30px rgba(0, 255, 0, 0.5);
+            transform: translateY(100%); /* Começa fora da tela */
+            opacity: 0; /* Começa invisível */
+            animation: slideUp 0.5s forwards, fadeIn 0.5s forwards; /* Animações de entrada */
+        }
+
+        .modal-content h2 {
+            margin-bottom: 20px;
+        }
+
+        .modal-content button {
+            padding: 10px 20px;
+            font-size: 1em;
+            border: none;
+            border-radius: 5px;
+            background-color: #76ff03;
+            color: #121212;
+            cursor: pointer;
+        }
+
+        /* Animações */
+        @keyframes slideUp {
+            from {
+                transform: translateY(100%);
+            }
+            to {
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes slideDown {
+            from {
+                transform: translateY(0);
+            }
+            to {
+                transform: translateY(100%);
+            }
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+            }
+            to {
+                opacity: 1;
+            }
+        }
+
+        @keyframes fadeOut {
+            from {
+                opacity: 1;
+            }
+            to {
+                opacity: 0;
+            }
+        }
+
+    </style>
+</head>
+<body>
+    <div id="app">
+        <h1>IP Locator</h1>
+        <div class="input-container">
+            <input type="text" id="ip-input" placeholder="Enter IP address">
+            <button onclick="locateIP()">Locate</button>
+        </div>
+        <div id="map"></div>
+        <div id="ip-info" style="display: none;">
+            <h2>IP Information</h2>
+            <p id="ip-address"></p>
+            <p id="location"></p>
+            <p id="organization"></p>
+            <p id="timezone"></p>
+            <p id="time"></p> <!-- Exibir a hora do timezone do IP -->
+        </div>
+    </div>
+
+    <!-- Modal de erro -->
+    <div id="error-modal" class="modal">
+        <div class="modal-content" id="modal-content">
+            <h2>Unable to locate the IP address.</h2>
+            <button onclick="closeModal()">OK</button>
+        </div>
+    </div>
+
+    <!-- Incluindo o JavaScript do Leaflet.js -->
+    <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+    <script>
+        let map = L.map('map').setView([20, 0], 2); // Inicializa com uma visão ampla do mundo
+        let currentMarker; // Variável para armazenar o marcador atual
+        let timeInterval; // Variável para atualizar o relógio
+
+        // Adicionar camada de mapa estilo satélite (OpenStreetMap)
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+            attribution: '© OpenStreetMap contributors'
+        }).addTo(map);
+
+        function locateIP() {
+            const ip = document.getElementById('ip-input').value;
+            if (!ip) {
+                showErrorModal(); // Mostra a mensagem de erro se o campo estiver vazio
+                return;
+            }
+
+            // Faz a requisição à API para obter a localização do IP
+            fetch(`https://ipapi.co/${ip}/json/`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.error) {
+                        showErrorModal(); // Mostra o erro se o IP não for localizado
+                        return;
+                    }
+
+                    const lat = data.latitude;
+                    const lng = data.longitude;
+
+                    // Remover o marcador anterior, se houver
+                    if (currentMarker) {
+                        map.removeLayer(currentMarker);
+                    }
+
+                    // Atualiza a localização do mapa
+                    map.setView([lat, lng], 12);
+
+                    // Adiciona um novo marcador ao mapa na localização do IP
+                    currentMarker = L.marker([lat, lng]).addTo(map)
+                        .bindPopup(`<b>IP: ${ip}</b><br>Location: ${data.city}, ${data.country_name}`).openPopup();
+
+                    // Exibir informações adicionais sobre o IP
+                    document.getElementById('ip-address').innerText = `IP Address: ${data.ip}`;
+                    document.getElementById('location').innerText = `Location: ${data.city}, ${data.region}, ${data.country_name}`;
+                    document.getElementById('organization').innerText = `Organization: ${data.org}`;
+                    document.getElementById('timezone').innerText = `Timezone: ${data.timezone}`;
+                    
+                    // Atualizar a hora local do IP
+                    clearInterval(timeInterval); // Parar qualquer atualização anterior de relógio
+                    updateTime(data.timezone);
+
+                    // Mostrar a div com informações do IP
+                    document.getElementById('ip-info').style.display = 'block';
+                })
+                .catch(error => {
+                    console.error('Error fetching IP data:', error);
+                    showErrorModal(); // Mostra o erro se ocorrer um problema na requisição
+                });
+        }
+
+        // Função para atualizar a hora local do timezone fornecido
+        function updateTime(timezone) {
+            timeInterval = setInterval(() => {
+                const time = new Date().toLocaleString("en-US", { timeZone: timezone });
+                document.getElementById('time').innerText = `Local Time: ${time}`;
+            }, 1000); // Atualiza a cada segundo
+        }
+
+        // Função para mostrar o modal de erro com animação
+        function showErrorModal() {
+            const modal = document.getElementById('error-modal');
+            const modalContent = document.getElementById('modal-content');
+            modal.style.display = 'flex';
+            modalContent.style.animation = 'slideUp 0.5s forwards, fadeIn 0.5s forwards'; // Animação de entrada
+        }
+
+        // Função para fechar o modal de erro com animação
+        function closeModal() {
+            const modalContent = document.getElementById('modal-content');
+            modalContent.style.animation = 'slideDown 0.5s forwards, fadeOut 0.5s forwards'; // Animação de saída
+            setTimeout(() => {
+                const modal = document.getElementById('error-modal');
+                modal.style.display = 'none'; // Esconde o modal após a animação
+            }, 500);
+        }
+    </script>
+</body>
+</html>
